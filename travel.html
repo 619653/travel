@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI旅游攻略生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .markdown-body h3 { color: #ec4899; font-size: 1.125rem; font-weight: bold; margin-top: 1rem; margin-bottom: 0.5rem; }
+        .markdown-body p { margin-bottom: 0.75rem; line-height: 1.6; color: #374151; }
+        .markdown-body strong { color: #111827; }
+        .image-scroll { display: flex; overflow-x: auto; gap: 0.5rem; padding: 0.5rem; background: #f3f4f6; }
+        .image-scroll img { height: 16rem; width: auto; border-radius: 0.5rem; flex-shrink: 0; object-fit: cover; cursor: pointer; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-2xl mx-auto p-4">
+        
+        <!-- 标题 -->
+        <div class="text-center py-6">
+            <h1 class="text-3xl font-bold text-pink-500 mb-2">🌍 AI 旅行日记</h1>
+            <p class="text-gray-500 text-sm">输入目的地，生成小红书风格攻略</p>
+        </div>
+
+        <!-- 输入表单 -->
+        <div class="bg-white rounded-2xl shadow-sm p-4 mb-6 sticky top-2 z-10">
+            <div class="flex gap-2 mb-2">
+                <input type="text" id="dest" placeholder="去哪儿？如：苏州" 
+                    class="flex-1 p-3 border rounded-lg text-sm">
+                <select id="days" class="p-3 border rounded-lg text-sm w-24">
+                    <option value="2">2天</option>
+                    <option value="3" selected>3天</option>
+                    <option value="5">5天</option>
+                </select>
+            </div>
+            <input type="text" id="style" placeholder="偏好：美食/拍照/亲子..." 
+                class="w-full p-3 border rounded-lg text-sm mb-3">
+            <button onclick="generate()" id="btn"
+                class="w-full bg-gradient-to-r from-pink-500 to-red-500 text-white font-bold py-3 rounded-xl">
+                ✨ 生成攻略
+            </button>
+        </div>
+
+        <!-- 加载中 -->
+        <div id="loading" class="hidden text-center py-10">
+            <div class="animate-spin text-4xl mb-2">📝</div>
+            <p class="text-gray-400 text-sm">AI正在写攻略，约需10-20秒...</p>
+        </div>
+
+        <!-- 结果展示 -->
+        <div id="result" class="hidden bg-white rounded-2xl shadow-lg overflow-hidden mb-20">
+            
+            <!-- 图片区 -->
+            <div class="image-scroll" id="gallery"></div>
+
+            <!-- 内容区 -->
+            <div class="p-5">
+                <div id="content" class="markdown-body text-sm"></div>
+                
+                <!-- 操作按钮 -->
+                <div class="flex gap-2 mt-6 pt-4 border-t">
+                    <button onclick="copyText()" class="flex-1 bg-gray-100 py-2 rounded-lg text-sm font-medium hover:bg-gray-200">
+                        📋 复制文案
+                    </button>
+                    <button onclick="window.print()" class="flex-1 bg-gray-100 py-2 rounded-lg text-sm font-medium hover:bg-gray-200">
+                        🖨️ 打印/保存PDF
+                    </button>
+                </div>
+
+                <!-- 分享链接 -->
+                <div class="mt-4 bg-yellow-50 p-3 rounded-lg text-xs text-yellow-800 break-all">
+                    <span class="font-bold">分享链接：</span><span id="shareUrl"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 🔴 改这里第1处：你的 Project URL（从截图看是这个）
+        const SUPABASE_URL = 'https://xszcsjwvyajxjyawtuqv.supabase.co'
+        
+        // 🔴 改这里第2处：你的 Publishable Key（从 API Keys 页面复制完整的 sb_publishable_...）
+        const SUPABASE_KEY = 'sb_publishable_4_e4kSOCKPEA4LaQa48IPQ_9lgV3...'
+        
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+        // 解析 Coze 的特殊格式（图片数组 + Markdown）
+        function parseContent(raw) {
+            const imgMatch = raw.match(/\["(https:\/\/[^"]+)"\]/)
+            const images = imgMatch ? [imgMatch[1]] : []
+            const text = raw.replace(/\[.*?\]/, '').trim()
+            return { images, text }
+        }
+
+        async function generate() {
+            const dest = document.getElementById('dest').value
+            if (!dest) return alert('请输入目的地')
+            
+            document.getElementById('loading').classList.remove('hidden')
+            document.getElementById('result').classList.add('hidden')
+            document.getElementById('btn').disabled = true
+            document.getElementById('btn').textContent = '生成中...'
+            
+            try {
+                const { data, error } = await supabase.functions.invoke('travel-agent', {
+                    body: {
+                        destination: dest,
+                        days: document.getElementById('days').value,
+                        style: document.getElementById('style').value
+                    }
+                })
+                
+                if (error) throw error
+                
+                const parsed = parseContent(data.content)
+                
+                const gallery = document.getElementById('gallery')
+                if (parsed.images.length > 0) {
+                    gallery.innerHTML = parsed.images.map(url => 
+                        `<img src="${url}" onclick="window.open('${url}')">`
+                    ).join('')
+                    gallery.style.display = 'flex'
+                } else {
+                    gallery.style.display = 'none'
+                }
+                
+                document.getElementById('content').innerHTML = marked.parse(parsed.text)
+                
+                const shareUrl = `${window.location.origin}${window.location.pathname}?id=${data.share_id}`
+                document.getElementById('shareUrl').textContent = shareUrl
+                window.currentText = parsed.text
+                
+                document.getElementById('result').classList.remove('hidden')
+                
+            } catch (err) {
+                console.error(err)
+                alert('生成失败：' + (err.message || '请检查网络'))
+            } finally {
+                document.getElementById('loading').classList.add('hidden')
+                document.getElementById('btn').disabled = false
+                document.getElementById('btn').textContent = '✨ 生成攻略'
+            }
+        }
+
+        function copyText() {
+            if (window.currentText) {
+                navigator.clipboard.writeText(window.currentText)
+                alert('攻略已复制！可以去小红书/朋友圈粘贴了~')
+            }
+        }
+
+        window.onload = async () => {
+            const id = new URLSearchParams(location.search).get('id')
+            if (id) {
+                const { data } = await supabase.from('travel_plans').select('*').eq('share_id', id).single()
+                if (data) {
+                    const parsed = parseContent(data.content)
+                    document.getElementById('gallery').innerHTML = parsed.images.map(url => 
+                        `<img src="${url}">`
+                    ).join('')
+                    document.getElementById('content').innerHTML = marked.parse(parsed.text)
+                    document.getElementById('result').classList.remove('hidden')
+                    document.getElementById('dest').value = data.destination || ''
+                }
+            }
+        }
+
+        window.generate = generate
+        window.copyText = copyText
+    </script>
+</body>
+</html>
